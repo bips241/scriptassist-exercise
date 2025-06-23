@@ -34,9 +34,12 @@ export class Task {
   @Column({ name: 'user_id' })
   userId: string;
 
-  @ManyToOne(() => User, (user) => user.tasks)
+  // Instead of referencing User directly at the top
+  @ManyToOne(() => User, (user: any) => user.tasks)
   @JoinColumn({ name: 'user_id' })
-  user: User;
+  user: any;
+
+
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
