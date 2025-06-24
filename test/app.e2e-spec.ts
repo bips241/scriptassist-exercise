@@ -7,6 +7,7 @@ import Redis from 'ioredis';
 let app: INestApplication;
 let accessToken: string;
 let redisClient: Redis;
+let refreshToken: string;
 
 jest.setTimeout(600_000); // 10 minutes for CI
 
@@ -36,12 +37,30 @@ beforeAll(async () => {
 
   await app.init();
 
-  const login = await request(app.getHttpServer())
-    .post('/auth/login')
-    .send({ email: 'test@example.com', password: 'Password123!' });
+const testEmail = `test-${Date.now()}@example.com`;
+const testPassword = 'StrongPassword123!';
 
-  accessToken = login.body.access_token;
-  console.log('Access Token:', accessToken);
+await request(app.getHttpServer())
+  .post('/users')
+  .send({
+    email: testEmail,
+    name: 'Test User',
+    password: testPassword,
+  });
+
+const login = await request(app.getHttpServer())
+  .post('/auth/login')
+  .send({ email: testEmail, password: testPassword });
+
+  console.log('Login response:', login.body);
+
+
+accessToken = login.body.accessToken;
+refreshToken = login.body.refreshToken;
+
+console.log('Access Token:', accessToken);
+console.log('Refresh Token:', refreshToken);
+
 });
 
 afterAll(async () => {

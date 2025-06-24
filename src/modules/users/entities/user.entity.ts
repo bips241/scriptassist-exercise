@@ -17,6 +17,9 @@ export class User {
   @Exclude({ toPlainOnly: true })
   password: string;
 
+  @Column({ nullable: true })
+  refreshToken?: string;
+
   @Column({ default: 'user' })
   role: string;
 

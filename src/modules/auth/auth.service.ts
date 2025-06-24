@@ -1,87 +1,78 @@
+// src/modules/auth/auth.service.ts
+
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { UsersService } from '../users/users.service';
-import { LoginDto } from './dto/login.dto';
-import { RegisterDto } from './dto/register.dto';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
+import { ConfigService } from '@nestjs/config';
+
+import { User } from '@modules/users/entities/user.entity';
 
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly usersService: UsersService,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
     private readonly jwtService: JwtService,
-    
+    private readonly config: ConfigService,
   ) {}
 
-  async login(loginDto: LoginDto) {
-    const { email, password } = loginDto;
-
-    const user = await this.usersService.findByEmail(email);
-    
-    if (!user) {
-      throw new UnauthorizedException('Invalid email');
+  async validateUser(email: string, password: string): Promise<User> {
+    const user = await this.userRepo.findOne({ where: { email } });
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      throw new UnauthorizedException('Invalid credentials');
     }
-
-    const passwordValid = await bcrypt.compare(password, user.password);
-    
-    if (!passwordValid) {
-      throw new UnauthorizedException('Invalid password');
-    }
-
-    const payload = { 
-      sub: user.id, 
-      email: user.email, 
-      role: user.role
-    };
-
-    return {
-      access_token: this.jwtService.sign(payload),
-      user: {
-        id: user.id,
-        email: user.email,
-        role: user.role,
-      },
-    };
-  }
-
-  async register(registerDto: RegisterDto) {
-    const existingUser = await this.usersService.findByEmail(registerDto.email);
-
-    if (existingUser) {
-      throw new UnauthorizedException('Email already exists');
-    }
-
-    const user = await this.usersService.create(registerDto);
-
-    const token = this.generateToken(user.id);
-
-    return {
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-      },
-      token,
-    };
-  }
-
-  private generateToken(userId: string) {
-    const payload = { sub: userId };
-    return this.jwtService.sign(payload);
-  }
-
-  async validateUser(userId: string): Promise<any> {
-    const user = await this.usersService.findOne(userId);
-    
-    if (!user) {
-      return null;
-    }
-    
     return user;
   }
 
-  async validateUserRoles(userId: string, requiredRoles: string[]): Promise<boolean> {
-    return true;
+  private async getTokens(userId: string, email: string): Promise<{ accessToken: string; refreshToken: string }> {
+    const payload = { sub: userId, email };
+
+    const accessToken = await this.jwtService.signAsync(payload, {
+      secret: this.config.get<string>('JWT_ACCESS_SECRET'),
+      expiresIn: this.config.get<string>('JWT_ACCESS_EXPIRY') || '15m',
+    });
+
+    const refreshToken = await this.jwtService.signAsync(payload, {
+      secret: this.config.get<string>('JWT_REFRESH_SECRET'),
+      expiresIn: this.config.get<string>('JWT_REFRESH_EXPIRY') || '7d',
+    });
+
+    return { accessToken, refreshToken };
   }
-} 
+
+  async login(user: User): Promise<{ accessToken: string; refreshToken: string }> {
+    const tokens = await this.getTokens(user.id, user.email);
+
+    await this.userRepo.update(user.id, {
+      refreshToken: await bcrypt.hash(tokens.refreshToken, 10),
+    });
+
+    return tokens;
+  }
+
+  async refresh(userId: string, refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user || !user.refreshToken) {
+      throw new UnauthorizedException('Refresh token not found');
+    }
+
+    const isValid = await bcrypt.compare(refreshToken, user.refreshToken);
+    if (!isValid) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    const tokens = await this.getTokens(user.id, user.email);
+
+    await this.userRepo.update(user.id, {
+      refreshToken: await bcrypt.hash(tokens.refreshToken, 10),
+    });
+
+    return tokens;
+  }
+
+  async logout(userId: string): Promise<void> {
+    await this.userRepo.update(userId, { refreshToken: undefined });
+  }
+}
