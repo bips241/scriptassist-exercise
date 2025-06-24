@@ -8,9 +8,8 @@ import { TasksModule } from '../../modules/tasks/tasks.module';
     BullModule.registerQueue({
       name: 'task-processing',
     }),
-    TasksModule,
+    TasksModule, // Needed for TasksService
   ],
   providers: [TaskProcessorService],
-  exports: [TaskProcessorService],
 })
-export class TaskProcessorModule {} 
+export class TaskProcessorModule {}

@@ -1,87 +1,91 @@
+// src/app.module.ts
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModuleOptions } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { UsersModule } from './modules/users/users.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { TaskProcessorModule } from './queues/task-processor/task-processor.module';
 import { ScheduledTasksModule } from './queues/scheduled-tasks/scheduled-tasks.module';
-import { CacheService } from './common/services/cache.service';
+import { CacheModule } from '@nestjs/cache-manager';
+
 import jwtConfig from '@config/jwt.config';
+import redisStore from 'cache-manager-ioredis-yet';
+import { CommonModule } from '@common/common.module';
 
 @Module({
   imports: [
-    // Configuration
     ConfigModule.forRoot({
       isGlobal: true,
       load: [jwtConfig],
     }),
-    
-    // Database
+
+    CacheModule.registerAsync({
+      isGlobal: true,
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        store: redisStore,
+        ttl: config.get<number>('CACHE_TTL') || 300,
+        host: config.get<string>('REDIS_HOST') || 'localhost',
+        port: config.get<number>('REDIS_PORT') || 6379,
+      }),
+    }),
+
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
+      useFactory: (config: ConfigService) => ({
         type: 'postgres',
-        host: configService.get('DB_HOST'),
-        port: configService.get('DB_PORT'),
-        username: configService.get('DB_USERNAME'),
-        password: configService.get('DB_PASSWORD'),
-        database: configService.get('DB_DATABASE'),
+        host: config.get('DB_HOST'),
+        port: config.get('DB_PORT'),
+        username: config.get('DB_USERNAME'),
+        password: config.get('DB_PASSWORD'),
+        database: config.get('DB_DATABASE'),
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: configService.get('NODE_ENV') === 'development',
-        logging: configService.get('NODE_ENV') === 'development',
+        synchronize: config.get('NODE_ENV') === 'development',
+        logging: config.get('NODE_ENV') === 'development',
       }),
     }),
-    
-    // Scheduling
-    ScheduleModule.forRoot(),
-    
-    // Queue
+
     BullModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
+      useFactory: (config: ConfigService) => ({
         connection: {
-          host: configService.get('REDIS_HOST'),
-          port: configService.get('REDIS_PORT'),
+          host: config.get('REDIS_HOST'),
+          port: config.get('REDIS_PORT'),
         },
       }),
     }),
-    
-    // Rate limiting
-    ThrottlerModule.forRootAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ([
-        {
-          ttl: 60,
-          limit: 10,
-        },
-      ]),
-    }),
-    
-    // Feature modules
+
+  
+ThrottlerModule.forRootAsync({
+  imports: [ConfigModule],
+  inject: [ConfigService],
+  useFactory: (configService: ConfigService): ThrottlerModuleOptions => ({
+    throttlers: [
+      {
+        ttl: 60,
+        limit: 10,
+      },
+    ],
+  }),
+}),
+
+
+
+    ScheduleModule.forRoot(),
     UsersModule,
     TasksModule,
     AuthModule,
-    
-    // Queue processing modules
     TaskProcessorModule,
     ScheduledTasksModule,
+    CommonModule, //  Now globally provides CacheService
   ],
-  providers: [
-    // Inefficient: Global cache service with no configuration options
-    // This creates a single in-memory cache instance shared across all modules
-    CacheService
-  ],
-  exports: [
-    // Exporting the cache service makes it available to other modules
-    // but creates tight coupling
-    CacheService
-  ]
 })
-export class AppModule {} 
+export class AppModule {}

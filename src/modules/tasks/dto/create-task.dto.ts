@@ -1,4 +1,4 @@
-import { IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { TaskStatus } from '../enums/task-status.enum';
 import { TaskPriority } from '../enums/task-priority.enum';
@@ -7,6 +7,7 @@ export class CreateTaskDto {
   @ApiProperty({ example: 'Complete project documentation' })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(100, { message: 'Title is too long. Max is 100 characters.' })
   title: string;
 
   @ApiProperty({ example: 'Add details about API endpoints and data models', required: false })
@@ -31,6 +32,6 @@ export class CreateTaskDto {
 
   @ApiProperty({ example: '123e4567-e89b-12d3-a456-426614174000' })
   @IsUUID()
-  @IsNotEmpty()
-  userId: string;
+  @IsOptional()
+  userId?: string;
 } 
